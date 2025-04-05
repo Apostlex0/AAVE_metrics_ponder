@@ -59,12 +59,12 @@ function getTokenAmountInUSD(amount: bigint, price: bigint, decimals: number): s
   return (tokenAmount * priceInUsd).toFixed(2);
 }
 
-// Helper to get cap amount in dollars (multiply by 10^6 then by price)
+// Helper to get cap amount in dollars - caps in Aave are already in token units 
+// and need to be converted appropriately to get the USD value
 function getCapAmountInUSD(capAmount: bigint, price: bigint, decimals: number): string {
   const priceInUsd = Number(price) / 1e8; // Convert price to USD (8 decimals)
-  const multipliedCap = capAmount * 1000000n; // Multiply by 10^6 as requested
-  const capTokenAmount = Number(multipliedCap) / 10 ** decimals; // Convert token amount to normal units
-  return (capTokenAmount * priceInUsd).toFixed(2);
+  // For supply/borrow caps, they're already in token units and should not be divided by decimals
+  return (Number(capAmount) * priceInUsd).toFixed(2);
 }
 
 // Helper function to sleep for a specified number of milliseconds
@@ -102,6 +102,17 @@ async function fetchReservesDataWithRetry(context: any, maxRetries = 3, initialD
   throw new Error("Max retries reached");
 }
 
+// Helper function to format large numbers to M/B format like in the AAVE UI
+function formatLargeNumber(num: number): string {
+  if (num >= 1_000_000_000) {
+    return (num / 1_000_000_000).toFixed(2) + 'B';
+  } else if (num >= 1_000_000) {
+    return (num / 1_000_000).toFixed(2) + 'M';
+  } else {
+    return num.toFixed(2);
+  }
+}
+
 // Market Parameters tracking on each 10 blocks
 ponder.on("AaveMetricsCheck:block", async ({ event, context }) => {
   try {
@@ -137,6 +148,10 @@ ponder.on("AaveMetricsCheck:block", async ({ event, context }) => {
       const supplyCapUSD = getCapAmountInUSD(reserve.supplyCap, reserve.priceInMarketReferenceCurrency, tokenDecimals);
       const borrowCapUSD = getCapAmountInUSD(reserve.borrowCap, reserve.priceInMarketReferenceCurrency, tokenDecimals);
       
+      // Format cap values for display
+      const formattedSupplyCap = formatLargeNumber(Number(supplyCapUSD));
+      const formattedBorrowCap = formatLargeNumber(Number(borrowCapUSD));
+      
       console.log(`\n--- ${tokenSymbol} METRICS ---`);
       console.log(`Address: ${reserve.underlyingAsset}`);
       console.log(`Price: $${formatPriceToUSD(reserve.priceInMarketReferenceCurrency)}`);
@@ -150,8 +165,8 @@ ponder.on("AaveMetricsCheck:block", async ({ event, context }) => {
       console.log(`Liquidation Threshold: ${formatBasisPoints(reserve.reserveLiquidationThreshold)}%`);
       console.log(`Liquidation Bonus: ${formatBasisPoints(reserve.reserveLiquidationBonus)}%`);
       console.log(`Borrowing Enabled: ${reserve.borrowingEnabled}`);
-      console.log(`Supply Cap: ${formatTokenAmount(reserve.supplyCap, tokenDecimals)} ${tokenSymbol} ($${supplyCapUSD})`);
-      console.log(`Borrow Cap: ${formatTokenAmount(reserve.borrowCap, tokenDecimals)} ${tokenSymbol} ($${borrowCapUSD})`);
+      console.log(`Supply Cap: ($${formattedSupplyCap})`);
+      console.log(`Borrow Cap: ($${formattedBorrowCap})`);
       
       // Write to database
       try {
